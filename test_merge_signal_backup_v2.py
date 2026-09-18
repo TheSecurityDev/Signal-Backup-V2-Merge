@@ -57,10 +57,10 @@ class MergeSignalBackupV2Tests(unittest.TestCase):
     def test_cutoff_without_timezone_is_utc(self):
         self.assertEqual(merge.parse_cutoff("1970-01-01T00:00:00"), 0)
 
-    def test_entropy_pool_normalization(self):
-        entropy_pool = "AbC1 " * 16
+    def test_recovery_key_normalization(self):
+        recovery_key = "AbC1 " * 16
 
-        self.assertEqual(merge.normalize_entropy_pool(entropy_pool), "abc1" * 16)
+        self.assertEqual(merge.normalize_recovery_key(recovery_key), "abc1" * 16)
 
     def test_main_round_trip_and_chat_item_key(self):
         aes_key = os.urandom(32)

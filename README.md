@@ -10,7 +10,7 @@ duplicating chat items.
 ## Requirements
 
 - Python 3.10 or newer
-- The account's 64-character entropy pool
+- The 64-character Signal Secure Backup recovery key
 - Two Signal `BackupV2` roots or snapshot directories from the same account
 
 ## Install
@@ -56,14 +56,14 @@ Example:
 python merge_signal_backup_v2.py "D:\\Signal\\old" "D:\\Signal\\new" "D:\\Signal\\merged" --cutoff "2025-01-01T00:00:00Z"
 ```
 
-The script prompts for the entropy pool without displaying it. To provide it
-non-interactively, add `--entropy-pool`:
+The script prompts for the recovery key without displaying it. To provide it
+non-interactively, add `--recovery-key`:
 
 ```sh
-python merge_signal_backup_v2.py TARGET SOURCE OUTPUT --cutoff 1735689600000 --entropy-pool YOUR_64_CHARACTER_ENTROPY_POOL
+python merge_signal_backup_v2.py TARGET SOURCE OUTPUT --cutoff 1735689600000 --recovery-key YOUR_64_CHARACTER_RECOVERY_KEY
 ```
 
-Do not put the entropy pool in a shared script or shell history.
+Do not put the recovery key in a shared script or shell history.
 
 ## Recommended workflow
 

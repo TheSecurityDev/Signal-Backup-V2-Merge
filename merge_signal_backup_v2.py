@@ -1,7 +1,7 @@
 """Merge two Signal Android BackupV2 roots without duplicate chat items.
 
 This utility targets local BackupV2 directories, not classic .backup files.
-It requires the account entropy pool and the cryptography package.
+It requires the 64-character Signal Secure Backup recovery key and the cryptography package.
 """
 
 from __future__ import annotations
@@ -166,8 +166,8 @@ def aes_ctr(key: bytes, iv: bytes, data: bytes) -> bytes:
     return decryptor.update(data) + decryptor.finalize()
 
 
-def derive_keys(entropy_pool: str, backup_id: bytes) -> tuple[bytes, bytes, bytes]:
-    backup_key = hkdf(entropy_pool.encode("ascii"), BACKUP_KEY_INFO, 32)
+def derive_keys(recovery_key: str, backup_id: bytes) -> tuple[bytes, bytes, bytes]:
+    backup_key = hkdf(recovery_key.encode("ascii"), BACKUP_KEY_INFO, 32)
     metadata_key = hkdf(backup_key, METADATA_KEY_INFO, 32)
     message_key = hkdf(backup_key, MESSAGE_KEY_INFO + backup_id, 64)
     return metadata_key, message_key[:32], message_key[32:]
@@ -189,7 +189,7 @@ def decrypt_main(main: bytes, aes_key: bytes, mac_key: bytes) -> tuple[bytes, li
         raise ValueError("main archive is too short")
     expected_mac = main[-32:]
     if not hmac.compare_digest(hmac.new(mac_key, main[:-32], hashlib.sha256).digest(), expected_mac):
-        raise ValueError("main archive MAC check failed; wrong entropy pool or corrupt backup")
+        raise ValueError("main archive MAC check failed; wrong recovery key or corrupt backup")
     iv = main[:16]
     decryptor = Cipher(algorithms.AES(aes_key), modes.CBC(iv)).decryptor()
     padded = decryptor.update(main[16:-32]) + decryptor.finalize()
@@ -212,12 +212,12 @@ def encrypt_main(header: bytes, frames: list[bytes], aes_key: bytes, mac_key: by
     return body + hmac.new(mac_key, body, hashlib.sha256).digest()
 
 
-def read_snapshot(root: Path, snapshot: Path, entropy_pool: str) -> dict:
+def read_snapshot(root: Path, snapshot: Path, recovery_key: str) -> dict:
     metadata = (snapshot / "metadata").read_bytes()
-    initial_key = hkdf(entropy_pool.encode("ascii"), BACKUP_KEY_INFO, 32)
+    initial_key = hkdf(recovery_key.encode("ascii"), BACKUP_KEY_INFO, 32)
     metadata_key = hkdf(initial_key, METADATA_KEY_INFO, 32)
     backup_id = parse_metadata(metadata, metadata_key)
-    _, mac_key, aes_key = derive_keys(entropy_pool, backup_id)
+    _, mac_key, aes_key = derive_keys(recovery_key, backup_id)
     header, frames = decrypt_main((snapshot / "main").read_bytes(), aes_key, mac_key)
     file_names = []
     for record in delimited_records((snapshot / "files").read_bytes()):
@@ -309,7 +309,7 @@ def parse_cutoff(value: str) -> int:
     return int(parsed.timestamp() * 1000)
 
 
-def normalize_entropy_pool(value: str) -> str:
+def normalize_recovery_key(value: str) -> str:
     return "".join(value.split()).lower()
 
 
@@ -454,9 +454,9 @@ def copy_referenced_files(
 
 def run(args: argparse.Namespace) -> None:
     progress = ProgressReporter(args.quiet)
-    args.entropy_pool = normalize_entropy_pool(args.entropy_pool)
-    if not re.fullmatch(r"[0-9a-z]{64}", args.entropy_pool):
-        raise ValueError("The account entropy pool must be exactly 64 lowercase letters or digits")
+    args.recovery_key = normalize_recovery_key(args.recovery_key)
+    if not re.fullmatch(r"[0-9a-z]{64}", args.recovery_key):
+        raise ValueError("The recovery key must be exactly 64 lowercase letters or digits")
     progress.stage("Validating backup locations")
     target_root, target_snapshot = find_snapshot(Path(args.target))
     source_root, source_snapshot = find_snapshot(Path(args.source))
@@ -467,9 +467,9 @@ def run(args: argparse.Namespace) -> None:
         raise ValueError("Target and source must be different backup roots")
 
     progress.stage(f"Decrypting target: {target_snapshot.name}")
-    target = read_snapshot(target_root, target_snapshot, args.entropy_pool)
+    target = read_snapshot(target_root, target_snapshot, args.recovery_key)
     progress.stage(f"Decrypting source: {source_snapshot.name}")
-    source = read_snapshot(source_root, source_snapshot, args.entropy_pool)
+    source = read_snapshot(source_root, source_snapshot, args.recovery_key)
     if target["backup_id"] != source["backup_id"]:
         raise ValueError("Target and source belong to different Signal accounts or backup keys")
 
@@ -572,7 +572,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Import source messages at or after this UTC ISO timestamp or epoch milliseconds",
     )
     parser.add_argument("--snapshot-name", help="Name for the output snapshot directory")
-    parser.add_argument("--entropy-pool", help="64-character lowercase account entropy pool")
+    parser.add_argument("--recovery-key", help="64-character Signal Secure Backup recovery key")
     parser.add_argument("--dry-run", action="store_true", help="Validate and report counts without creating output")
     parser.add_argument("--quiet", action="store_true", help="Suppress progress messages")
     parser.add_argument(
@@ -585,8 +585,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_parser().parse_args()
-    if args.entropy_pool is None:
-        args.entropy_pool = getpass.getpass("Signal account entropy pool: ")
+    if args.recovery_key is None:
+        args.recovery_key = getpass.getpass("Signal Secure Backup recovery key: ")
     try:
         run(args)
     except (FileExistsError, FileNotFoundError, OSError, ValueError) as exc:
