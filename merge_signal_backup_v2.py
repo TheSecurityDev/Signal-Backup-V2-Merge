@@ -33,6 +33,24 @@ BACKUP_KEY_INFO = b"20240801_SIGNAL_BACKUP_KEY"
 METADATA_KEY_INFO = b"20241011_SIGNAL_LOCAL_BACKUP_METADATA_KEY"
 MESSAGE_KEY_INFO = b"20241007_SIGNAL_BACKUP_ENCRYPT_MESSAGE_BACKUP:"
 MEDIA_NAME_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+FRAME_IDENTITIES = {
+    1: ("account", 0),
+    2: ("recipient", 1),
+    3: ("chat", 1),
+    5: ("sticker", 1),
+    6: ("adhoc", 1),
+    7: ("notification", 12),
+    8: ("folder", 9),
+}
+FRAME_PRIORITY = {
+    "account": 0,
+    "recipient": 1,
+    "chat": 2,
+    "sticker": 3,
+    "adhoc": 3,
+    "notification": 3,
+    "folder": 4,
+}
 
 
 class ProgressReporter:
@@ -260,18 +278,9 @@ def frame_kind_and_key(frame: bytes):
     number, wire_type, value, _ = field
     if wire_type != 2:
         return None, None
-    identities = {
-        1: ("account", 0),
-        2: ("recipient", 1),
-        3: ("chat", 1),
-        5: ("sticker", 1),
-        6: ("adhoc", 1),
-        7: ("notification", 12),
-        8: ("folder", 9),
-    }
-    if number not in identities:
+    if number not in FRAME_IDENTITIES:
         return None, None
-    kind, identity_field = identities[number]
+    kind, identity_field = FRAME_IDENTITIES[number]
     identity = first_field(value, identity_field, None) if identity_field else None
     if identity_field == 0:
         identity = b""
@@ -370,10 +379,11 @@ def merge_frames(
         else:
             static[identity] = (kind, frame)
 
-    priority = {"account": 0, "recipient": 1, "chat": 2, "sticker": 3, "adhoc": 3, "notification": 3, "folder": 4}
     static_frames = [
         frame
-        for _, (kind, frame) in sorted(static.items(), key=lambda item: priority.get(item[1][0], 3))
+        for _, (_, frame) in sorted(
+            static.items(), key=lambda item: FRAME_PRIORITY.get(item[1][0], 3)
+        )
     ]
     messages = sorted(target_messages + source_messages, key=chat_item_date)
     return static_frames + list(unkeyed_static) + messages, imported, skipped_duplicates
@@ -424,7 +434,8 @@ def attachment_names_for_merge(
     missing = missing_referenced_files(target, source, names)
     if missing and not skip_missing:
         raise FileNotFoundError(missing_attachment_message(missing))
-    available = [name for name in names if name not in set(missing)]
+    missing_set = set(missing)
+    available = [name for name in names if name not in missing_set]
     return available, missing
 
 
@@ -454,8 +465,8 @@ def copy_referenced_files(
 
 def run(args: argparse.Namespace) -> None:
     progress = ProgressReporter(args.quiet)
-    args.recovery_key = normalize_recovery_key(args.recovery_key)
-    if not re.fullmatch(r"[0-9a-z]{64}", args.recovery_key):
+    recovery_key = normalize_recovery_key(args.recovery_key)
+    if not re.fullmatch(r"[0-9a-z]{64}", recovery_key):
         raise ValueError("The recovery key must be exactly 64 lowercase letters or digits")
     progress.stage("Validating backup locations")
     target_root, target_snapshot = find_snapshot(Path(args.target))
@@ -467,9 +478,9 @@ def run(args: argparse.Namespace) -> None:
         raise ValueError("Target and source must be different backup roots")
 
     progress.stage(f"Decrypting target: {target_snapshot.name}")
-    target = read_snapshot(target_root, target_snapshot, args.recovery_key)
+    target = read_snapshot(target_root, target_snapshot, recovery_key)
     progress.stage(f"Decrypting source: {source_snapshot.name}")
-    source = read_snapshot(source_root, source_snapshot, args.recovery_key)
+    source = read_snapshot(source_root, source_snapshot, recovery_key)
     if target["backup_id"] != source["backup_id"]:
         raise ValueError("Target and source belong to different Signal accounts or backup keys")
 
