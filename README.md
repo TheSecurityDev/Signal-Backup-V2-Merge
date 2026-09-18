@@ -6,6 +6,11 @@ duplicating chat items.
 > **Important:** Work on copies of your backups. The output path must not exist.
 > Both inputs must belong to the same Signal account and use the same backup
 > key. This tool does not process classic `.backup` files.
+>
+> **Note:** This project was vibe coded with GPT-5.6 Luna. Use it at your own
+> risk and verify the results before relying on it with important backups. I was
+> able to successfully merge my own Signal BackupV2 files using this tool which
+> is why I'm releasing it to the public.
 
 ## Requirements
 
